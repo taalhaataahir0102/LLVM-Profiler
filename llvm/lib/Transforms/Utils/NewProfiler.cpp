@@ -5,6 +5,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
+#include "llvm/Support/CommandLine.h"
 #include <string>
 #include <vector>
 #include <map>
@@ -14,6 +15,12 @@
 using namespace llvm;
 
 std::vector<std::string> atomicCounter;
+
+static cl::opt<std::string> MyFunc("functionality",                                          // command line arg
+                               cl::desc("Specify the functionality you want to use"),    // description
+                               cl::value_desc("function_name"),
+                               cl::init("main"),                                         // Default value
+                               cl::Optional);
 
 
 void initialize_clocks(Module &M) {
@@ -378,12 +385,18 @@ void childrens(Module &M){
 
 
 PreservedAnalyses NewProfilerPass::run(Module &M, ModuleAnalysisManager &AM) {
-    errs() << "*****PROFILER*****\n";
-    initialize_clocks(M);        // Initializing global variables
-    initialize_counters(M);        // Initializing global variables
-    CounterAdder(M);      // Adding atomic counters to update the global variables
-    childrens(M);
-    finalize(M);          // printing the global variables
+    std::string functionalityName = MyFunc;
+
+    if (functionalityName == "time"){
+        initialize_clocks(M);        // Initializing global variables
+        childrens(M);
+        finalize(M);          // printing the global variables
+    }
+    else{
+        initialize_counters(M);        // Initializing global variables
+        CounterAdder(M);      // Adding atomic counters to update the global variables
+        finalize(M);          // printing the global variables
+    }
 
     return PreservedAnalyses::all();
 }
