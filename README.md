@@ -60,3 +60,8 @@ isPrime.glob: 30000
 sumPrimesInRange.glob: 3
 
 main.glob: 1
+
+## Future Plans:
+
+1. Include relative and absolute time taken by each function
+2. Include memory taken by each funtion on stack
