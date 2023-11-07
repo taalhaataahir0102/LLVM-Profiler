@@ -16,8 +16,7 @@ using namespace llvm;
 std::vector<std::string> atomicCounter;
 
 
-void initialize(Module &M) {
-
+void initialize_clocks(Module &M) {
     Function *clockFunc = M.getFunction("clock");          // Getting pointer to the clock function
     // Check if clock is not present inside the module
     if (!clockFunc) {
@@ -34,6 +33,28 @@ void initialize(Module &M) {
             &M);
     }
 
+    for (Function &F : M) {
+        // Check if the function has a declaration in the moduele
+        if (!F.isDeclaration()) {
+            // Push the function name in the vector. We only profile those functions which are declared in the module.
+            std::string counterName = "clocks_by_" + F.getName().str() + ".glob";
+            atomicCounter.push_back(counterName);
+        }
+    }
+
+    IntegerType *I64Ty = Type::getInt64Ty(M.getContext()); // initializing a 64 bit integer
+
+    for (const std::string &name : atomicCounter) {
+        errs() << name << "\n";
+        // Creating global counters of integer type, initialized with 0, based on the names we created in the vector above
+        new GlobalVariable(M, I64Ty, false, GlobalValue::CommonLinkage, 
+                           ConstantInt::get(I64Ty, 0), name);
+    }
+    return;
+}
+
+void initialize_counters(Module &M) {
+
     // Pushing basic counters in a vector
     atomicCounter.push_back("num_inst.glob");
     atomicCounter.push_back("num_bb.glob");
@@ -45,8 +66,6 @@ void initialize(Module &M) {
         if (!F.isDeclaration()) {
             // Push the function name in the vector. We only profile those functions which are declared in the module.
             atomicCounter.push_back(F.getName().str() + ".glob");
-            std::string counterName = "clocks_by_" + F.getName().str() + ".glob";
-            atomicCounter.push_back(counterName);
         }
     }
 
@@ -230,198 +249,87 @@ void CounterAdder(Module &M){
     }
 }
 
+// void self(Module &M){
 
-// // Basic Block
-// void TimeCounterAdder(Module &M){
 //     Function *clockFunc = M.getFunction("clock");
-//     if (!clockFunc) {
-//         errs() << "clock function not found\n";
-//         return;
-//     }
+
 //     LLVMContext &Context = M.getContext();
 //     MDNode *TalhaMD = MDNode::get(Context, MDString::get(Context, "Talha"));
 
-//     IntegerType *I64Ty = Type::getInt64Ty(M.getContext()); // initializing a 64 bit integer
+//     IntegerType *I64Ty = Type::getInt64Ty(Context); // 64-bit integer type
+
 
 //     for (Function &F : M) {
-//         if (!F.isDeclaration()) {
-//             std::string counterName = "clocks_by_" + F.getName().str() + ".glob";
-//             GlobalVariable *GV = M.getGlobalVariable(counterName);
-//             if (!GV) {
-//                 errs() << "Global variable not found: " << counterName << "\n";
-//                 continue;
+//         if (F.isDeclaration())
+//             continue;
+        
+//         CallInst *StartClock = nullptr;
+//         CallInst *EndClock = nullptr;
+
+//         std::string counterName = "clocks_by_" + F.getName().str() + ".glob";
+//         GlobalVariable *GV = M.getGlobalVariable(counterName);
+
+//         for (auto Inst = inst_begin(F), IE = inst_end(F); Inst != IE; ++Inst) {
+
+//             if (&*Inst == &*F.getEntryBlock().getFirstInsertionPt()) {
+//                 BasicBlock &EntryBB = F.getEntryBlock();
+//                 IRBuilder<> EntryBuilder(&*EntryBB.getFirstInsertionPt());
+//                 StartClock = CallInst::Create(clockFunc, "", &*EntryBB.getFirstInsertionPt());
+//                 StartClock->setMetadata("Start", TalhaMD);
+
+//                 errs() << "Start clock of " << F.getName() << ":   ";
+//                 StartClock->print(errs());
 //             }
-//             for (BasicBlock &BB : F) {
-//                  // Inserting a call to clock at the start of the basic block
-//                 IRBuilder<> Builder(&*BB.getFirstInsertionPt());
-//                 CallInst *StartClock = CallInst::Create(clockFunc, "", &BB.front());
-//                 StartClock->setMetadata("Talha", TalhaMD);
+//             if (auto *CI = dyn_cast<CallInst>(&*Inst)) {
+//                 Function *CalledFunc = CI->getCalledFunction();
 
-//                 // Finding the terminator instruction in the basic block
-//                 Instruction *Terminator = BB.getTerminator();
+//                 if (CalledFunc && !CalledFunc->isDeclaration()) {
+                    
+//                     IRBuilder<> EntryBuilder(CI);
+//                     EndClock = CallInst::Create(clockFunc, "", CI);
+//                     EndClock->setMetadata("End", TalhaMD);
 
-//                 // Inserting a call to clock at the end of the basic block
-//                 CallInst *EndClock = CallInst::Create(clockFunc, "", Terminator);
-//                 EndClock->setMetadata("Talha", TalhaMD);
+//                     errs() << "End clock of " << F.getName() << ":   ";
+//                     EndClock->print(errs());
+//                     errs() << "\n";
 
-//                 // Calculating the difference in clock cycles
-//                 BinaryOperator *ClockDiff = BinaryOperator::Create(
-//                     Instruction::Sub, EndClock, StartClock, "clock_diff", Terminator);
-//                 ClockDiff->setMetadata("Talha", TalhaMD);
+//                     StartClock = CallInst::Create(clockFunc, "", CI->getNextNode());
+//                     StartClock->setMetadata("Start", TalhaMD);
 
-//                 // Loading the current clock cycles from the global variable
-//                 LoadInst *CounterLoad = Builder.CreateLoad(I64Ty, GV);
-//                 CounterLoad->setMetadata("Talha", TalhaMD);
+//                     errs() << "Start clock of " << F.getName() << ":   ";
+//                     StartClock->print(errs());
+//                     errs() << "\n";
 
-//                 // Adding the clock difference to the total clock cycles
-//                 BinaryOperator *AddClock = BinaryOperator::Create(
-//                     Instruction::Add, CounterLoad, ClockDiff, "add_clock", Terminator);
-//                 AddClock->setMetadata("Talha", TalhaMD);
-
-//                 // Storing the updated clock cycles back to the global variable
-//                 StoreInst *StoreClock = new StoreInst(AddClock, GV, Terminator);
-//                 StoreClock->setMetadata("Talha", TalhaMD);
-//             }
-//         }
-//     }
-// }
-
-
-// // Basic block and function calls
-// void TimeCounterAdder(Module &M) {
-//     Function *clockFunc = M.getFunction("clock");
-//     if (!clockFunc) {
-//         errs() << "clock function not found\n";
-//         return;
-//     }
-//     LLVMContext &Context = M.getContext();
-//     MDNode *TalhaMD = MDNode::get(Context, MDString::get(Context, "Talha"));
-
-//     IntegerType *I64Ty = Type::getInt64Ty(M.getContext()); // initializing a 64-bit integer
-
-//     for (Function &F : M) {
-//         if (!F.isDeclaration()) {
-//             std::string counterName = "clocks_by_" + F.getName().str() + ".glob";
-//             GlobalVariable *GV = M.getGlobalVariable(counterName);
-//             if (!GV) {
-//                 errs() << "Global variable not found: " << counterName << "\n";
-//                 continue;
-//             }
-//             for (BasicBlock &BB : F) {
-//                 // Inserting a call to clock at the start of the basic block
-//                 IRBuilder<> Builder(&*BB.getFirstInsertionPt());
-//                 CallInst *StartClock = CallInst::Create(clockFunc, "", &BB.front());
-//                 StartClock->setMetadata("Talha", TalhaMD);
-
-//                 for (Instruction &I : BB) {
-//                     if (CallInst *CI = dyn_cast<CallInst>(&I)) {
-//                         Function *CalledFunc = CI->getCalledFunction();
-//                         if (CalledFunc && !CalledFunc->isDeclaration()) {
-//                             // Check if the instruction is a function call
-//                             // Stop the clock and add the clock difference to the global variable
-//                             CallInst *EndClock = CallInst::Create(clockFunc, "", CI);
-//                             EndClock->setMetadata("TalhaTahir", TalhaMD);
-
-//                             BinaryOperator *ClockDiff = BinaryOperator::Create(
-//                                 Instruction::Sub, EndClock, StartClock, "clock_diff", CI);
-//                             ClockDiff->setMetadata("TalhaTahir", TalhaMD);
-
-//                             LoadInst *CounterLoad = Builder.CreateLoad(I64Ty, GV);
-//                             CounterLoad->setMetadata("TalhaTahir", TalhaMD);
-
-//                             BinaryOperator *AddClock = BinaryOperator::Create(
-//                                 Instruction::Add, CounterLoad, ClockDiff, "add_clock", CI);
-//                             AddClock->setMetadata("TalhaTahir", TalhaMD);
-
-//                             StoreInst *StoreClock = new StoreInst(AddClock, GV, CI);
-//                             StoreClock->setMetadata("TalhaTahir", TalhaMD);
-
-//                             // Restart the clock after the function call
-//                             StartClock = CallInst::Create(clockFunc, "", CI);
-//                             StartClock->setMetadata("TalhaTahir", TalhaMD);
-//                         }
-//                     }
 //                 }
-//                 // Inserting a call to clock at the end of the basic block
-//                 Instruction *Terminator = BB.getTerminator();
-//                 CallInst *EndClock = CallInst::Create(clockFunc, "", Terminator);
-//                 EndClock->setMetadata("Talha", TalhaMD);
-
-//                 BinaryOperator *ClockDiff = BinaryOperator::Create(
-//                     Instruction::Sub, EndClock, StartClock, "clock_diff", Terminator);
-//                 ClockDiff->setMetadata("Talha", TalhaMD);
-
-//                 LoadInst *CounterLoad = Builder.CreateLoad(I64Ty, GV);
-//                 CounterLoad->setMetadata("Talha", TalhaMD);
-
-//                 BinaryOperator *AddClock = BinaryOperator::Create(
-//                     Instruction::Add, CounterLoad, ClockDiff, "add_clock", Terminator);
-//                 AddClock->setMetadata("Talha", TalhaMD);
-
-//                 StoreInst *StoreClock = new StoreInst(AddClock, GV, Terminator);
-//                 StoreClock->setMetadata("Talha", TalhaMD);
 //             }
 //         }
-//     }
-// }
+
+        // BasicBlock &LastBB = F.back();
+        // // Insert a call to clock at the end of the last basic block
+        // IRBuilder<> ExitBuilder(&*LastBB.getTerminator());
+        // EndClock = CallInst::Create(clockFunc, "", LastBB.getTerminator());
+        // EndClock->setMetadata("End", TalhaMD);
+
+        // errs() << "End clock of " << F.getName() << ":   ";
+        // EndClock->print(errs());
+        // errs() << "\n";
 
 
+        //  // Calculate the difference and store it in the global variable GV
+        // LoadInst *LoadStartClock = ExitBuilder.CreateLoad(I64Ty, GV);
+        // BinaryOperator *ClockDiff = BinaryOperator::Create(
+        //     Instruction::Sub, EndClock, StartClock, "clock_diff", LastBB.getTerminator());
+        // BinaryOperator *AddClockDiff = BinaryOperator::Create(
+        //     Instruction::Add, LoadStartClock, ClockDiff, "add_clock_diff", LastBB.getTerminator());
+        // ExitBuilder.CreateStore(AddClockDiff, GV);
 
-// // Functionwise
-
-// void TimeCounterAdder(Module &M) {
-//     Function *clockFunc = M.getFunction("clock");
-//     if (!clockFunc) {
-//         errs() << "clock function not found\n";
-//         return;
-//     }
-//     LLVMContext &Context = M.getContext();
-//     MDNode *TalhaMD = MDNode::get(Context, MDString::get(Context, "Talha"));
-
-//     IntegerType *I64Ty = Type::getInt64Ty(M.getContext()); // initializing a 64-bit integer
-
-//     for (Function &F : M) {
-//         if (!F.isDeclaration()) {
-//             std::string counterName = "clocks_by_" + F.getName().str() + ".glob";
-//             GlobalVariable *GV = M.getGlobalVariable(counterName);
-//             if (!GV) {
-//                 errs() << "Global variable not found: " << counterName << "\n";
-//                 continue;
-//             }
-
-//             // Insert a call to clock at the start of the function
-//             BasicBlock &EntryBB = F.getEntryBlock();
-//             IRBuilder<> EntryBuilder(&*EntryBB.getFirstInsertionPt());
-//             CallInst *StartClock = CallInst::Create(clockFunc, "", &*EntryBB.getFirstInsertionPt());
-
-//             // Find the last basic block in the function
-//             BasicBlock &LastBB = F.back();
-//             // Insert a call to clock at the end of the last basic block
-//             IRBuilder<> ExitBuilder(&*LastBB.getTerminator());
-
-//             // Load the value from the global variable
-//             LoadInst *LoadStartClock = ExitBuilder.CreateLoad(I64Ty, GV);
-
-//             CallInst *EndClock = CallInst::Create(clockFunc, "", LastBB.getTerminator());
-
-//             // Subtract the loaded value from EndClock
-//             BinaryOperator *ClockDiff = BinaryOperator::Create(
-//                 Instruction::Sub, EndClock, StartClock, "clock_diff", LastBB.getTerminator());
-
-//             // Add the clock difference to the global variable
-//             BinaryOperator *AddClockDiff = BinaryOperator::Create(
-//                 Instruction::Add, LoadStartClock, ClockDiff, "add_clock_diff", LastBB.getTerminator());
-
-//             // Store the updated value in the global variable
-//             ExitBuilder.CreateStore(AddClockDiff, GV);
-//         }
 //     }
 // }
 
 
 
 
-void final(Module &M){
+void childrens(Module &M){
 
     Function *clockFunc = M.getFunction("clock");
 
@@ -429,195 +337,52 @@ void final(Module &M){
     MDNode *TalhaMD = MDNode::get(Context, MDString::get(Context, "Talha"));
 
     IntegerType *I64Ty = Type::getInt64Ty(Context); // 64-bit integer type
-
 
     for (Function &F : M) {
         if (F.isDeclaration())
             continue;
-        
+
         CallInst *StartClock = nullptr;
         CallInst *EndClock = nullptr;
-
+        
         std::string counterName = "clocks_by_" + F.getName().str() + ".glob";
         GlobalVariable *GV = M.getGlobalVariable(counterName);
 
-        for (auto Inst = inst_begin(F), IE = inst_end(F); Inst != IE; ++Inst) {
+        // Insert a call to clock at the start of the function
+        BasicBlock &EntryBB = F.getEntryBlock();
+        IRBuilder<> EntryBuilder(&*EntryBB.getFirstInsertionPt());
+        StartClock = EntryBuilder.CreateCall(clockFunc, {});
+        StartClock->setMetadata("Start", TalhaMD);
 
-            if (&*Inst == &*F.getEntryBlock().getFirstInsertionPt()) {
-                BasicBlock &EntryBB = F.getEntryBlock();
-                IRBuilder<> EntryBuilder(&*EntryBB.getFirstInsertionPt());
-                StartClock = CallInst::Create(clockFunc, "", &*EntryBB.getFirstInsertionPt());
-                StartClock->setMetadata("Start", TalhaMD);
-
-                errs() << "Start clock of " << F.getName() << ":   ";
-                StartClock->print(errs());
-                errs() << *StartClock << "\n";
-            }
-            if (auto *CI = dyn_cast<CallInst>(&*Inst)) {
-                Function *CalledFunc = CI->getCalledFunction();
-
-                if (CalledFunc && !CalledFunc->isDeclaration()) {
-                    
-                    IRBuilder<> EntryBuilder(CI);
-                    EndClock = CallInst::Create(clockFunc, "", CI);
-                    EndClock->setMetadata("End", TalhaMD);
-
-                    errs() << "End clock of " << F.getName() << ":   ";
-                    EndClock->print(errs());
-                    errs() << "\n";
-
-                    StartClock = CallInst::Create(clockFunc, "", CI->getNextNode());
-                    StartClock->setMetadata("Start", TalhaMD);
-
-                    errs() << "Start clock of " << F.getName() << ":   ";
-                    StartClock->print(errs());
-                    errs() << "\n";
-
-                }
-            }
-        }
-
+        // Find the last basic block in the function
         BasicBlock &LastBB = F.back();
         // Insert a call to clock at the end of the last basic block
         IRBuilder<> ExitBuilder(&*LastBB.getTerminator());
-        EndClock = CallInst::Create(clockFunc, "", LastBB.getTerminator());
+        EndClock = ExitBuilder.CreateCall(clockFunc, {});
         EndClock->setMetadata("End", TalhaMD);
 
-        errs() << "End clock of " << F.getName() << ":   ";
-        EndClock->print(errs());
-        errs() << "\n";
+        // Calculate the difference
+        BinaryOperator *ClockDiff = BinaryOperator::Create(Instruction::Sub, EndClock, StartClock, "clock_diff", &*LastBB.getTerminator());
 
-
-         // Calculate the difference and store it in the global variable GV
+        // Load the value from the global variable
         LoadInst *LoadStartClock = ExitBuilder.CreateLoad(I64Ty, GV);
-        BinaryOperator *ClockDiff = BinaryOperator::Create(
-            Instruction::Sub, EndClock, StartClock, "clock_diff", LastBB.getTerminator());
-        BinaryOperator *AddClockDiff = BinaryOperator::Create(
-            Instruction::Add, LoadStartClock, ClockDiff, "add_clock_diff", LastBB.getTerminator());
+
+        // Add the clock difference to the global variable
+        BinaryOperator *AddClockDiff = BinaryOperator::Create(Instruction::Add, LoadStartClock, ClockDiff, "add_clock_diff", &*LastBB.getTerminator());
+
+        // Store the updated value in the global variable
         ExitBuilder.CreateStore(AddClockDiff, GV);
-
     }
 }
 
 
-
-// if (StartClock) {
-//     errs() << "Start clock of " << F.getName() << ":   ";
-//     StartClock->print(errs());
-//     errs() << "\n";
-// }
-
-// if (EndClock) {
-//     errs() << "End clock of "<< F.getName() << ":   ";
-//     EndClock->print(errs());
-//     errs() << "\n";
-// }
-
-void finding_calls(Module &M) {
-    Function *clockFunc = M.getFunction("clock");
-
-    LLVMContext &Context = M.getContext();
-    MDNode *TalhaMD = MDNode::get(Context, MDString::get(Context, "Talha"));
-
-    IntegerType *I64Ty = Type::getInt64Ty(Context); // 64-bit integer type
-
-
-    // for (auto Inst = inst_begin(F), IE = inst_end(F); Inst != IE; ++Inst) {
-    for (Function &F : M) {
-        if (!F.isDeclaration()) {
-            std::string counterName = "clocks_by_" + F.getName().str() + ".glob";
-            GlobalVariable *GV = M.getGlobalVariable(counterName);
-            if (!GV) {
-                errs() << "Global variable not found: " << counterName << "\n";
-                continue;
-            }
-
-            // Insert a call to clock at the start of the function
-            BasicBlock &EntryBB = F.getEntryBlock();
-            IRBuilder<> EntryBuilder(&*EntryBB.getFirstInsertionPt());
-            CallInst *StartFunctionClock = CallInst::Create(clockFunc, "", &*EntryBB.getFirstInsertionPt());
-            StartFunctionClock->setMetadata("Talha", TalhaMD);
-            for (BasicBlock &BB : F) {
-                IRBuilder<> Builder(&*BB.getFirstInsertionPt());
-                for (Instruction &I : BB) {
-                    if (auto *CI = dyn_cast<CallInst>(&I)) {
-                        Function *CalledFunc = CI->getCalledFunction();
-                        if (CalledFunc && !CalledFunc->isDeclaration()) {
-                            
-                            // Insert a call to clock at the start of the function call
-                            IRBuilder<> EntryBuilder(CI);
-                            CallInst *EndClock = CallInst::Create(clockFunc, "", CI);
-                            EndClock->setMetadata("TalhaTahir", TalhaMD);
-
-                            BinaryOperator *ClockDiff = BinaryOperator::Create(
-                                Instruction::Sub, EndClock, StartFunctionClock, "clock_diff", CI);
-                            ClockDiff->setMetadata("TalhaTahir", TalhaMD);
-
-                            LoadInst *CounterLoad = Builder.CreateLoad(I64Ty, GV);
-                            CounterLoad->setMetadata("TalhaTahir", TalhaMD);
-
-                            BinaryOperator *AddClock = BinaryOperator::Create(
-                                Instruction::Add, CounterLoad, ClockDiff, "add_clock", CI);
-                            AddClock->setMetadata("TalhaTahir", TalhaMD);
-
-                            StoreInst *StoreClock = new StoreInst(AddClock, GV, CI);
-                            StoreClock->setMetadata("TalhaTahir", TalhaMD);
-
-
-
-                            // Insert a call to clock at the end of the function call
-                            StartFunctionClock = CallInst::Create(clockFunc, "", CI->getNextNode());
-                            StartFunctionClock->setMetadata("TalhaTahir", TalhaMD);
-                        }
-                    }
-                }
-            }
-            // Find the last basic block in the function
-            BasicBlock &LastBB = F.back();
-            // Insert a call to clock at the end of the last basic block
-            IRBuilder<> ExitBuilder(&*LastBB.getTerminator());
-
-            // Load the value from the global variable
-            LoadInst *LoadStartClock = ExitBuilder.CreateLoad(I64Ty, GV);
-
-            CallInst *EndClock = CallInst::Create(clockFunc, "", LastBB.getTerminator());
-
-            // Subtract the loaded value from EndClock
-            BinaryOperator *ClockDiff = BinaryOperator::Create(
-                Instruction::Sub, EndClock, StartFunctionClock, "clock_diff", LastBB.getTerminator());
-
-            // Add the clock difference to the global variable
-            BinaryOperator *AddClockDiff = BinaryOperator::Create(
-                Instruction::Add, LoadStartClock, ClockDiff, "add_clock_diff", LastBB.getTerminator());
-
-            // Store the updated value in the global variable
-            ExitBuilder.CreateStore(AddClockDiff, GV);
-        }
-    }
-}
-
-
-
-// BinaryOperator *ClockDiff = BinaryOperator::Create(
-//                             Instruction::Sub, EndClock, StartClock, "clock_diff", CI);
-//                     ClockDiff->setMetadata("TalhaTahir", TalhaMD);
-
-//                     LoadInst *CounterLoad = EntryBuilder.CreateLoad(I64Ty, GV);
-//                     CounterLoad->setMetadata("TalhaTahir", TalhaMD);
-
-//                     BinaryOperator *AddClock = BinaryOperator::Create(
-//                         Instruction::Add, CounterLoad, ClockDiff, "add_clock", CI);
-//                     AddClock->setMetadata("TalhaTahir", TalhaMD);
-
-//                     StoreInst *StoreClock = new StoreInst(AddClock, GV, CI);
-//                     StoreClock->setMetadata("TalhaTahir", TalhaMD);
 
 PreservedAnalyses NewProfilerPass::run(Module &M, ModuleAnalysisManager &AM) {
     errs() << "*****PROFILER*****\n";
-    initialize(M);        // Initializing global variables
-    // TimeCounterAdder(M);  // Adding time counters for each function
-    // final(M);
+    initialize_clocks(M);        // Initializing global variables
+    initialize_counters(M);        // Initializing global variables
     CounterAdder(M);      // Adding atomic counters to update the global variables
+    childrens(M);
     finalize(M);          // printing the global variables
 
     return PreservedAnalyses::all();
