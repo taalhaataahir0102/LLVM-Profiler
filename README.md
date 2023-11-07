@@ -18,7 +18,9 @@ Inside /riscv/riscv-llvm/_build/bin **generate llvm IR** from your C file using:
 
 Run your **optimization pass** in the same directory using opt:
 
-```./opt -passes=newprofiler example.ll -S -o newexample.ll```
+```./opt -passes=newprofiler example.ll --functionality="info" -S -o newexample.ll```
+
+You can also give "time" in funtionality, to get the time analysis of each function during runtime.
 
 From riscv/_install/bin/ **generate binary** from this LLVM IR:
 
@@ -40,8 +42,9 @@ The output will show the following results at runtime:
 
 1. Number of basic blocks traversed
 2. Total number of instructions
-3. Count of ech function traversed
-4. count of heavy instructions including memory, branch and multiply isntructions
+3. Count of each function traversed
+4. Count of heavy instructions including memory, branch and multiply isntructions
+5. Absolute time taken by each function
 
 ## Example output:
 
@@ -63,5 +66,5 @@ main.glob: 1
 
 ## Future Plans:
 
-1. Include relative and absolute time taken by each function
+1. Include relative time taken by each function
 2. Include memory taken by each funtion on stack
